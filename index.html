@@ -737,6 +737,7 @@ const PLAYER_TABS = [
   { id: 'prestamos', label: '🤝 Préstamos' },
   { id: 'retos', label: '⚔️ Retos' },
   { id: 'tienda', label: '🛒 Tienda' },
+  { id: 'kaka-encargo', label: '💀 Kaka Encargo' },
   { id: 'rachas', label: '🔥 Rachas' },
   { id: 'ajustes', label: '⚙️ Mi Cuenta' },
 ];
@@ -753,6 +754,7 @@ const ADMIN_TABS = [
   { id: 'prestamos', label: '🤝 Préstamos' },
   { id: 'retos', label: '⚔️ Retos' },
   { id: 'tienda', label: '🛒 Tienda' },
+  { id: 'kaka-encargo', label: '💀 Kaka Encargo' },
   { id: 'hacienda', label: '💼 Hacienda' },
   { id: 'rachas', label: '🔥 Rachas' },
   { id: 'admin-credenciales', label: '🔑 Contraseñas' },
@@ -1570,7 +1572,8 @@ async function resolverReto(id, perdedor, penalizacion) {
 // RENDER: TIENDA
 // ============================================================
 const CATALOGO_TIENDA = [
-  { codigo:'T01', nombre:'🛡️ Semana Sin Kakas', precio:20000, desc:'Inmunidad total durante 7 días contra cualquier kaka. Se activa cuando tú quieras después de comprarla.' },
+  { codigo:'T01', nombre:'🛡️ Semana Sin Kakas', precio:200000, desc:'Inmunidad total durante 7 días contra cualquier kaka. Ni kakas normales ni por encargo te afectan. Se activa cuando quieras.' },
+  { codigo:'T02', nombre:'💀 Kaka por Encargo', precio:40000, desc:'Manda una kaka personalizada a quien quieras. Tú eliges la víctima y el motivo. Sin piedad. Sin excusas.' },
 ];
 
 // ── Immunity helpers ──────────────────────────────────────────
@@ -1716,11 +1719,113 @@ async function comprarItem(codigo) {
       inv.inmunidades.push({ id: Date.now(), activa: false, comprada: Date.now(), expira: 0 });
       saveInventario(j, inv);
       showToast('🛡️ Inmunidad comprada — actívala en tu inventario cuando quieras.', 'success');
+      showPage('tienda');
+    } else if (codigo === 'T02') {
+      showToast('💀 Kaka por Encargo comprada — úsala en la pestaña "💀 Kaka Encargo"', 'success');
+      // Guardar en inventario local
+      const inv = getInventario(j);
+      inv.kakas_encargo = inv.kakas_encargo || [];
+      inv.kakas_encargo.push({ id: Date.now(), comprada: Date.now(), usada: false });
+      saveInventario(j, inv);
+      showPage('kaka-encargo');
     } else {
       showToast(`✅ ¡${item.nombre} comprado!`, 'success');
+      showPage('tienda');
     }
-    showPage('tienda');
   } catch(e) { showToast('❌ Error al comprar', 'error'); }
+}
+
+
+// ============================================================
+// RENDER: KAKA POR ENCARGO
+// ============================================================
+function renderKakaEncargo() {
+  const j = STATE.currentUser;
+  const inv = getInventario(j);
+  const kakasDisponibles = (inv.kakas_encargo || []).filter(k => !k.usada);
+  const tieneKaka = kakasDisponibles.length > 0;
+  const historial = DATA.kakas.filter(k => k.notas && k.notas.startsWith('💀 Encargo de'));
+  const victimas = DATA.jugadores.filter(jj => jj !== j);
+
+  const histRows = historial.slice().reverse().map(k =>
+    '<tr>' +
+    '<td style="color:var(--muted);font-size:12px">' + k.fecha + '</td>' +
+    '<td class="player-name">' + k.jugador + '</td>' +
+    '<td>' + k.kaka + '</td>' +
+    '<td class="profit-neg">' + k.multa + '€</td>' +
+    '<td style="color:var(--muted);font-size:12px">' + k.notas + '</td>' +
+    '</tr>'
+  ).join('');
+
+  const opcionesVictimas = victimas.map(v => '<option value="' + v + '">' + v + '</option>').join('');
+
+  const sinKakaHTML = '<div class="card" style="text-align:center;padding:32px;border-color:rgba(255,51,85,.2)">' +
+    '<div style="font-size:48px;margin-bottom:12px">💀</div>' +
+    '<div style="font-size:20px;font-weight:700;margin-bottom:8px">No tienes ninguna Kaka por Encargo</div>' +
+    '<div style="color:var(--muted);margin-bottom:20px">Cómprala en la Tienda por 40.000€</div>' +
+    '<button class="btn-primary" onclick="showPage(\'tienda\')">🛒 Ir a la Tienda</button>' +
+    '</div>';
+
+  const conKakaHTML = '<div class="card" style="border-color:rgba(255,51,85,.3)">' +
+    '<div class="card-title" style="color:var(--red)">💀 Tienes ' + kakasDisponibles.length + ' Kaka(s) por Encargo disponible(s)</div>' +
+    '<div style="background:rgba(255,51,85,.06);border:1px solid rgba(255,51,85,.2);border-radius:10px;padding:14px;margin-bottom:16px;font-size:13px;color:var(--muted)">' +
+    '⚠️ Una vez enviada, la kaka cae de inmediato al perfil de la víctima. Sin vuelta atrás.' +
+    '</div>' +
+    '<div class="form-group"><label class="form-label">💀 Víctima</label>' +
+    '<select class="form-select" id="encargo-victima">' + opcionesVictimas + '</select></div>' +
+    '<div class="form-group"><label class="form-label">😈 Descripción de la Kaka</label>' +
+    '<input type="text" class="form-input" id="encargo-desc" placeholder="Ej: Se creyó el rey de las apuestas..."></div>' +
+    '<div class="form-group"><label class="form-label">💸 Multa que le cae (€)</label>' +
+    '<input type="number" class="form-input" id="encargo-multa" placeholder="500" min="100"></div>' +
+    '<button class="btn-primary" style="background:linear-gradient(135deg,#ff3355,#cc1133)" onclick="enviarKakaEncargo()">💀 MANDAR KAKA</button>' +
+    '</div>';
+
+  const historialHTML = historial.length > 0 ?
+    '<div class="card" style="margin-top:8px"><div class="card-title">📋 Historial de Kakas por Encargo</div>' +
+    '<table class="data-table"><thead><tr><th>Fecha</th><th>Víctima</th><th>Kaka</th><th>Multa</th><th>Encargada por</th></tr></thead>' +
+    '<tbody>' + histRows + '</tbody></table></div>' : '';
+
+  return '<div class="section-title">💀 Kaka por Encargo</div>' +
+    (tieneKaka ? conKakaHTML : sinKakaHTML) +
+    historialHTML;
+}
+
+async function enviarKakaEncargo() {
+  const j = STATE.currentUser;
+  const victima = document.getElementById('encargo-victima').value;
+  const desc = document.getElementById('encargo-desc').value.trim();
+  const multa = parseFloat(document.getElementById('encargo-multa').value);
+
+  if (!desc) { showToast('⚠ Escribe la descripción de la kaka', 'error'); return; }
+  if (!multa || multa < 100) { showToast('⚠ La multa mínima es 100€', 'error'); return; }
+  if (!victima || victima === j) { showToast('⚠ Elige una víctima válida', 'error'); return; }
+
+  const inv = getInventario(j);
+  const kakasDisponibles = (inv.kakas_encargo || []).filter(k => !k.usada);
+  if (kakasDisponibles.length === 0) { showToast('⚠ No tienes Kakas por Encargo disponibles', 'error'); return; }
+
+  if (!confirm('¿Mandar kaka a ' + victima + '?\n\n"' + desc + '"\n\nMulta: ' + multa + '€\n\n¡Esto no tiene vuelta atrás! 💀')) return;
+
+  try {
+    const kakaObj = {
+      fecha: new Date().toISOString().split('T')[0],
+      jugador: victima,
+      kaka: '💀 ' + desc,
+      multa: multa,
+      notas: '💀 Encargo de ' + j
+    };
+    const newId = await saveKaka(kakaObj);
+    kakaObj.id = newId;
+    DATA.kakas.push(kakaObj);
+
+    const kakaIdx = inv.kakas_encargo.findIndex(k => !k.usada);
+    if (kakaIdx !== -1) inv.kakas_encargo[kakaIdx].usada = true;
+    saveInventario(j, inv);
+
+    recalcBancas();
+    showToast('💀 ¡Kaka enviada a ' + victima + '! Que sufra.', 'success');
+    showPage('kaka-encargo');
+  } catch(e) { showToast('❌ Error al enviar la kaka', 'error'); }
 }
 
 // ============================================================
